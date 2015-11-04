@@ -2,6 +2,7 @@ var express = require('express');
 var util = require('./lib/utility');
 var partials = require('express-partials');
 var bodyParser = require('body-parser');
+var session = require('express-session');
 
 
 var db = require('./app/config');
@@ -12,6 +13,13 @@ var Link = require('./app/models/link');
 var Click = require('./app/models/click');
 
 var app = express();
+
+// create session
+app.use(session({
+  secret:'1234',
+  resave: false,
+  saveUninitialized: false
+}));
 
 app.set('views', __dirname + '/views');
 app.set('view engine', 'ejs');
@@ -25,19 +33,34 @@ app.use(express.static(__dirname + '/public'));
 
 app.get('/', 
 function(req, res) {
-  res.render('index');
+  // check if logged in
+  if( req.session.username ) {
+    res.render('index');
+  } else {
+    res.redirect('/login');
+  } 
 });
 
 app.get('/create', 
 function(req, res) {
-  res.render('index');
+  // check if logged in
+  if( req.session.username ) {
+    res.render('index');
+  } else {
+    res.redirect('/login');
+  } 
 });
 
 app.get('/links', 
 function(req, res) {
-  Links.reset().fetch().then(function(links) {
-    res.send(200, links.models);
-  });
+  // check if logged in
+  if( req.session.username ) {
+    Links.reset().fetch().then(function(links) {
+      res.send(200, links.models);
+    });
+  } else {
+    res.redirect('/login');
+  } 
 });
 
 app.post('/links', 
@@ -76,9 +99,90 @@ function(req, res) {
 
 /************************************************************/
 // Write your authentication routes here
+// Specify which routes should exist on request to server
 /************************************************************/
 
+/* Login GET request*/
+/*When the login page is requested, we are going to render/create the login page. This render will be the response to the 
+  initial request for the page itself. */
+app.get('/login', 
+  function(req, res) {
+    res.render('login');
+});
 
+// login POST request
+app.post('/login',
+  function(req, res){
+  // assign username to req.body.username
+  var username = req.body.username;
+  // assign password to req.body.password
+  var password = req.body.password;
+  // create a new User
+  new User({username: username, password: password}).fetch().then(function(found){
+    // if user is found
+    if (found){
+      // save username and password to session
+      req.session.username = username;
+      req.session.password = password;
+      // redirect to the root (/)
+      res.redirect('/');
+    } else{
+      // else redirect to login
+      res.redirect('/login');
+    }
+    
+  });
+});
+ 
+// signup GET request
+app.get('/signup', 
+function(req, res) {
+  res.render('signup');
+}); 
+
+// signup POST request
+app.post('/signup',
+  function(req, res){
+  // assign username to req.body.username
+  var username = req.body.username;
+  // assign password to req.body.password
+  var password = req.body.password;
+  // create a new User
+  new User({username: username, password: password}).fetch().then(function(found){
+    // check is user exists
+    if (found){
+      // save existing username and password to session
+      req.session.username = username;
+      req.session.password = password;
+      // redirect to the index (/)
+      res.redirect('/');
+    } else {
+      // else create user
+      var newUser = new User({
+        username: username,
+        password: password
+      });
+      // save new username and password to session 
+      req.session.username = username;
+      req.session.password = password;
+      // save user info to db
+      newUser.save().then(function(newUser){
+        Users.add(newUser);
+        // redirect to index
+        res.redirect('/');
+      });
+    }
+  });
+});
+
+
+// logout GET request
+app.get('/logout', 
+function(req, res) {
+  // clear users session (break ties with user)
+  req.session.username = undefined;
+  res.render('login');
+}); 
 
 /************************************************************/
 // Handle the wildcard route last - if all other routes fail
